@@ -66,24 +66,25 @@ export default function ProjectsCreatePage() {
 
   const statusId = watch("status_id");
 
-  const statusList = useMemo(
-    () => (statuses.data ?? []) as ProjectStatusLite[],
-    [statuses.data]
-  );
+  const statusList = useMemo(() => {
+  const rows = statuses.data ?? [];
+  return rows as unknown as ProjectStatusLite[];
+}, [statuses.data]);
 
   // Auto-select "Active" (only if user hasn't picked something)
-  useEffect(() => {
-    if (statusId) return;
-    if (!statusList.length) return;
+useEffect(() => {
+  if (statusId) return;
+  if (!statusList.length) return;
 
-    const active = statusList.find(
-      (s: ProjectStatusLite) => s.name.toLowerCase() === "active"
-    );
+  // Find status whose name is "Active" (case-insensitive)
+  const active = statusList.find(
+    (s) => (s.name ?? "").toLowerCase().trim() === "active"
+  );
 
-    if (active) {
-      setValue("status_id", active.id, { shouldValidate: true });
-    }
-  }, [statusId, statusList, setValue]);
+  if (active?.id) {
+    setValue("status_id", active.id, { shouldValidate: true });
+  }
+}, [statusId, statusList, setValue]);
 
   const onSubmit = handleSubmit(async (values: ProjectCreate) => {
     const cleaned: ProjectCreate = {

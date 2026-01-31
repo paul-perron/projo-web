@@ -38,43 +38,74 @@ function todayIsoDate(): string {
 }
 
 /**
- * List assignments with optional filters and pagination.
- * Default: only active assignments (ended_at is null).
+ * List assignments with optional filters.
+ *
+ * IMPORTANT:
+ * - Active = ended_at IS NULL
+ * - All = includeEnded = true
+ * - Filters use *camelCase* param names (projectId/workerId/positionId/type)
+ *   which we translate into DB columns (project_id/worker_id/position_id/assignment_type)
  */
 export async function listAssignments(params: ListAssignmentsParams = {}): Promise<Assignment[]> {
-  let q = api.from("assignments").select("*");
+  const {
+    includeEnded = false,
+    workerId,
+    projectId,
+    positionId,
+    type,
+    page,
+    pageSize,
+  } = params;
 
-  if (params.workerId) q = q.eq("worker_id", params.workerId);
-  if (params.projectId) q = q.eq("project_id", params.projectId);
-  if (params.positionId) q = q.eq("position_id", params.positionId);
-  if (params.type) q = q.eq("assignment_type", params.type);
+  let q = api
+    .schema("api")
+    .from("assignments")
+    .select("*")
+    // consistent ordering (most recent first)
+    .order("assignment_start_date", { ascending: false });
 
-  if (!params.includeEnded) q = q.is("ended_at", null);
+  // Active vs All
+  if (!includeEnded) {
+    q = q.is("ended_at", null);
+  }
 
-  // Pagination support
-  if (params.page !== undefined && params.pageSize !== undefined) {
-    const from = (params.page - 1) * params.pageSize;
-    const to = from + params.pageSize - 1;
+  // Optional filters
+  if (workerId) q = q.eq("worker_id", workerId);
+  if (projectId) q = q.eq("project_id", projectId);
+  if (positionId) q = q.eq("position_id", positionId);
+  if (type) q = q.eq("assignment_type", type as AssignmentType);
+
+  // Optional pagination
+  if (page && pageSize) {
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
     q = q.range(from, to);
   }
 
-  const res = await q.order("created_at", { ascending: false });
-  if (res.error) throw new AppError("DB_ERROR", res.error.message, res.error);
+  const res = await q;
+
+  if (res.error) throw new AppError("DB_ERROR", res.error.message);
   return (res.data ?? []) as Assignment[];
 }
 
-export async function listAssignmentsByWorker(workerId: string, includeEnded = false) {
-  if (!workerId?.trim()) throw new AppError("VALIDATION_ERROR", "workerId is required.");
+export async function listAssignmentsByWorker(
+  workerId: string,
+  includeEnded = false
+): Promise<Assignment[]> {
   return listAssignments({ workerId, includeEnded });
 }
 
-export async function listAssignmentsByProject(projectId: string, includeEnded = false) {
-  if (!projectId?.trim()) throw new AppError("VALIDATION_ERROR", "projectId is required.");
+export async function listAssignmentsByProject(
+  projectId: string,
+  includeEnded = false
+): Promise<Assignment[]> {
   return listAssignments({ projectId, includeEnded });
 }
 
-export async function listAssignmentsByPosition(positionId: string, includeEnded = false) {
-  if (!positionId?.trim()) throw new AppError("VALIDATION_ERROR", "positionId is required.");
+export async function listAssignmentsByPosition(
+  positionId: string,
+  includeEnded = false
+): Promise<Assignment[]> {
   return listAssignments({ positionId, includeEnded });
 }
 
@@ -85,6 +116,7 @@ export async function getActiveIncumbentForPosition(positionId: string): Promise
   if (!positionId?.trim()) return null;
 
   const res = await api
+    .schema("api")
     .from("assignments")
     .select("*")
     .eq("position_id", positionId)
@@ -120,7 +152,6 @@ export async function assignPrimary(input: CreateIncumbentAssignmentInput): Prom
     rotation_schedule: rotationOrDefault(input.rotation_schedule),
     opcon_supervisor_id: toNullIfBlank(input.opcon_supervisor_id),
 
-    // Keep legacy trigger happy
     status: "active",
 
     notes: toNullIfBlank(input.notes),
@@ -129,6 +160,7 @@ export async function assignPrimary(input: CreateIncumbentAssignmentInput): Prom
   };
 
   const res = await api
+    .schema("api")
     .from("assignments")
     .insert([payload])
     .select("*")
@@ -170,6 +202,7 @@ export async function assignSecondary(input: CreateIncumbentAssignmentInput): Pr
   };
 
   const res = await api
+    .schema("api")
     .from("assignments")
     .insert([payload])
     .select("*")
@@ -214,6 +247,7 @@ export async function startTempCoverage(input: CreateTempCoverageInput): Promise
   };
 
   const res = await api
+    .schema("api")
     .from("assignments")
     .insert([payload])
     .select("*")
@@ -238,6 +272,7 @@ export async function endAssignment(input: EndAssignmentInput): Promise<Assignme
   };
 
   const res = await api
+    .schema("api")
     .from("assignments")
     .update(patch)
     .eq("id", input.assignmentId)

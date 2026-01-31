@@ -1,5 +1,7 @@
 // src/services/api/assignments/assignments.queries.ts
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { UseMutationOptions } from "@tanstack/react-query";
 
 import {
   assignPrimary,
@@ -13,6 +15,7 @@ import {
 } from "./assignments.service";
 
 import type {
+  Assignment,
   AssignmentType,
   CreateIncumbentAssignmentInput,
   CreateTempCoverageInput,
@@ -80,11 +83,22 @@ function invalidateAssignmentQueries(qc: ReturnType<typeof useQueryClient>, a: a
   if (a?.position_id) qc.invalidateQueries({ queryKey: ["assignments", "position", a.position_id] });
 }
 
-export function useAssignPrimary() {
+/**
+ * PRIMARY assign (snake_case payload)
+ * Now invalidates caches automatically (and still honors optional caller callbacks).
+ */
+export function useAssignPrimary(
+  options?: UseMutationOptions<Assignment, Error, CreateIncumbentAssignmentInput, unknown>
+) {
   const qc = useQueryClient();
+
   return useMutation({
     mutationFn: (payload: CreateIncumbentAssignmentInput) => assignPrimary(payload),
-    onSuccess: (a) => invalidateAssignmentQueries(qc, a),
+    onSuccess: (a, vars, ctx) => {
+      invalidateAssignmentQueries(qc, a);
+      options?.onSuccess?.(a, vars, ctx);
+    },
+    ...options,
   });
 }
 
@@ -113,22 +127,16 @@ export function useEndAssignment() {
 }
 
 /**
- * Compatibility hook used by AssignmentsCreatePage:
- * Chooses PRIMARY/SECONDARY/TEMP_COVERAGE based on assignment_type.
- */
-// src/services/api/assignments/assignments.queries.ts
-
-// ...keep existing imports above...
-
-/**
- * UI-facing mutation: accepts camelCase payload and maps to service.
+ * UI-facing mutation:
+ * Accepts camelCase payload and maps to service snake_case inputs.
+ * Recommended for all UI "create assignment" flows.
  */
 export function useAssignWorker() {
   const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async (payload: {
-      assignmentType: AssignmentType; // "PRIMARY" | "SECONDARY" | "TEMP_COVERAGE"
+      assignmentType: AssignmentType;
 
       workerId: string;
       projectId: string;
@@ -171,12 +179,7 @@ export function useAssignWorker() {
       return payload.assignmentType === "SECONDARY" ? assignSecondary(base) : assignPrimary(base);
     },
 
-    onSuccess: (a) => {
-      qc.invalidateQueries({ queryKey: ["assignments"] });
-      qc.invalidateQueries({ queryKey: ["assignments", "worker", a.worker_id] });
-      qc.invalidateQueries({ queryKey: ["assignments", "project", a.project_id] });
-      qc.invalidateQueries({ queryKey: ["assignments", "position", a.position_id] });
-    },
+    onSuccess: (a) => invalidateAssignmentQueries(qc, a),
   });
 }
 
