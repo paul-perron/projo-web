@@ -1,5 +1,4 @@
 // src/services/api/assignments/assignments.queries.ts
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationOptions } from "@tanstack/react-query";
 
@@ -7,6 +6,7 @@ import {
   assignPrimary,
   assignSecondary,
   endAssignment,
+  getActiveIncumbentForPosition,
   listAssignments,
   listAssignmentsByProject,
   listAssignmentsByPosition,
@@ -73,7 +73,19 @@ export function useWorkerActiveAssignment(workerId: string) {
 }
 
 /**
- * Mutations
+ * Active incumbent helper
+ * Returns active incumbent assignment (PRIMARY/SECONDARY) for a position (or null).
+ */
+export function useActiveIncumbentForPosition(positionId: string) {
+  return useQuery({
+    queryKey: ["assignments", "position", positionId, "active-incumbent"],
+    queryFn: () => getActiveIncumbentForPosition(positionId),
+    enabled: Boolean(positionId),
+  });
+}
+
+/**
+ * Internal helper for invalidation
  */
 function invalidateAssignmentQueries(qc: ReturnType<typeof useQueryClient>, a: any) {
   qc.invalidateQueries({ queryKey: ["assignments"] });
@@ -84,8 +96,7 @@ function invalidateAssignmentQueries(qc: ReturnType<typeof useQueryClient>, a: a
 }
 
 /**
- * PRIMARY assign (snake_case payload)
- * Now invalidates caches automatically (and still honors optional caller callbacks).
+ * Mutations
  */
 export function useAssignPrimary(
   options?: UseMutationOptions<Assignment, Error, CreateIncumbentAssignmentInput, unknown>
@@ -93,17 +104,15 @@ export function useAssignPrimary(
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload: CreateIncumbentAssignmentInput) => assignPrimary(payload),
-    onSuccess: (a, vars, ctx) => {
-      invalidateAssignmentQueries(qc, a);
-      options?.onSuccess?.(a, vars, ctx);
-    },
-    ...options,
+    mutationFn: (payload) => assignPrimary(payload),
+    onSuccess: (a) => invalidateAssignmentQueries(qc, a),
+    ...options, // ✅ allow caller to override/extend if they want
   });
 }
 
 export function useAssignSecondary() {
   const qc = useQueryClient();
+
   return useMutation({
     mutationFn: (payload: CreateIncumbentAssignmentInput) => assignSecondary(payload),
     onSuccess: (a) => invalidateAssignmentQueries(qc, a),
@@ -112,31 +121,23 @@ export function useAssignSecondary() {
 
 export function useStartTempCoverage() {
   const qc = useQueryClient();
+
   return useMutation({
     mutationFn: (payload: CreateTempCoverageInput) => startTempCoverage(payload),
     onSuccess: (a) => invalidateAssignmentQueries(qc, a),
   });
 }
 
-export function useEndAssignment() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: EndAssignmentInput) => endAssignment(payload),
-    onSuccess: (a) => invalidateAssignmentQueries(qc, a),
-  });
-}
-
 /**
- * UI-facing mutation:
- * Accepts camelCase payload and maps to service snake_case inputs.
- * Recommended for all UI "create assignment" flows.
+ * UI-facing mutation: accepts camelCase payload and maps to service snake_case.
+ * This is what your `NewAssignmentModal` is using.
  */
 export function useAssignWorker() {
   const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async (payload: {
-      assignmentType: AssignmentType;
+      assignmentType: AssignmentType; // "PRIMARY" | "SECONDARY" | "TEMP_COVERAGE"
 
       workerId: string;
       projectId: string;
@@ -184,9 +185,18 @@ export function useAssignWorker() {
 }
 
 /**
- * Compatibility hook used by AssignmentsListPage
+ * Compatibility hook used by AssignmentsListPage to "complete" an assignment.
  */
 export function useCompleteAssignment() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: EndAssignmentInput) => endAssignment(payload),
+    onSuccess: (a) => invalidateAssignmentQueries(qc, a),
+  });
+}
+
+export function useEndAssignment() {
   const qc = useQueryClient();
 
   return useMutation({

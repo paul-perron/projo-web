@@ -1,3 +1,5 @@
+// src/pages/assignments/NewAssignmentModal.tsx
+
 import {
   Alert,
   Button,
@@ -5,7 +7,9 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   MenuItem,
+  Switch,
   TextField,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
@@ -17,7 +21,10 @@ import {
   type ProjectPositionLite,
 } from "../../services/api/projects/projectPositions.queries";
 
-import { useAssignWorker } from "../../services/api/assignments/assignments.queries";
+import {
+  useAssignmentsList,
+  useAssignWorker,
+} from "../../services/api/assignments/assignments.queries";
 import type { AssignmentType } from "../../services/api/assignments/types";
 
 type Props = {
@@ -37,7 +44,11 @@ function todayDateOnly() {
  *
  * Current scope:
  * - PRIMARY assignment only (incumbent)
- * - (We can extend to SECONDARY + TEMP_COVERAGE once this is stable)
+ *
+ * Conflict/override UX:
+ * - By default, workers with an active PRIMARY assignment are hidden
+ * - Toggle "Show workers already assigned" to include them
+ * - If a conflicted worker is selected, an override justification is required
  */
 export function NewAssignmentModal({ open, onClose }: Props) {
   const [projectId, setProjectId] = useState("");
@@ -46,15 +57,31 @@ export function NewAssignmentModal({ open, onClose }: Props) {
   const [startDate, setStartDate] = useState("");
   const [rotationSchedule, setRotationSchedule] = useState("14/14");
 
+    // Override dialog (used only when worker already has an active PRIMARY)
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [pendingPayload, setPendingPayload] = useState<any>(null);
+  const [conflictText, setConflictText] = useState("");
+  
+  // Conflict handling
+  const [showConflicts, setShowConflicts] = useState(false);
+
   // Load dropdown data
   const projects = useProjectsList(useMemo(() => ({ page: 1, pageSize: 500 }), []));
   const workers = useWorkersList(useMemo(() => ({ page: 1, pageSize: 500 }), []));
   const allPositions = useAllProjectPositions();
 
-  const positions = useMemo(() => {
-  const rows = (allPositions.data ?? []) as ProjectPositionLite[];
-  return projectId ? rows.filter((p) => p.project_id === projectId) : [];
-}, [allPositions.data, projectId]);
+  // Load active PRIMARY assignments to detect worker conflicts
+  const activePrimaries = useAssignmentsList(
+    useMemo(() => ({ includeEnded: false, type: "PRIMARY" as AssignmentType }), [])
+  );
+
+  const activePrimaryByWorkerId = useMemo(() => {
+    const m = new Map<string, any>();
+    const rows = (activePrimaries.data ?? []) as any[];
+    for (const a of rows) m.set(a.worker_id, a);
+    return m;
+  }, [activePrimaries.data]);
 
   // Filter positions by selected project
   const positionsForProject = useMemo(() => {
@@ -84,13 +111,56 @@ export function NewAssignmentModal({ open, onClose }: Props) {
     setWorkerId("");
     setStartDate("");
     setRotationSchedule("14/14");
-    // do not clear errors; react-query will handle as state changes
+    setShowConflicts(false);
+    setOverrideReason("");
+    setOverrideOpen(false);
+    setPendingPayload(null);
+    setConflictText("");
   }, [open]);
 
   const projectList = projects.data?.data ?? [];
-  const workerList = (workers.data ?? []) as any[];
+  const workerListRaw = (workers.data ?? []) as any[];
 
-  const canSubmit =
+    const projectById = useMemo(() => {
+    const m = new Map<string, any>();
+    for (const p of projectList) m.set(p.id, p);
+    return m;
+  }, [projectList]);
+
+  const positionById = useMemo(() => {
+    const m = new Map<string, any>();
+    const rows = (allPositions.data ?? []) as any[];
+    for (const pos of rows) m.set(pos.id, pos);
+    return m;
+  }, [allPositions.data]);
+
+  function projectLabelById(id?: string | null) {
+    if (!id) return "";
+    const p = projectById.get(id);
+    return p?.project_name ?? p?.name ?? id;
+  }
+
+  function positionLabelById(id?: string | null) {
+    if (!id) return "";
+    const pos = positionById.get(id);
+    // Use your existing fields if available
+    return pos?.name ?? id;
+  }
+
+  const selectedConflict = useMemo(() => {
+    if (!workerId) return null;
+    return activePrimaryByWorkerId.get(workerId) ?? null;
+  }, [workerId, activePrimaryByWorkerId]);
+
+  const requiresOverride = Boolean(selectedConflict);
+
+  // Default: hide conflicted workers unless toggle is enabled
+  const workerList = useMemo(() => {
+    if (showConflicts) return workerListRaw;
+    return workerListRaw.filter((w) => !activePrimaryByWorkerId.has(w.id));
+  }, [workerListRaw, showConflicts, activePrimaryByWorkerId]);
+
+   const canSubmit =
     Boolean(projectId) &&
     Boolean(positionId) &&
     Boolean(workerId) &&
@@ -103,34 +173,72 @@ export function NewAssignmentModal({ open, onClose }: Props) {
     return err?.message ?? null;
   }, [assignWorker.error]);
 
-  async function submit() {
+    async function submit() {
     if (!canSubmit) return;
 
-    const assignmentType: AssignmentType = "PRIMARY";
-
-    await assignWorker.mutateAsync({
-      assignmentType,
-
+    const basePayload = {
       workerId,
       projectId,
       positionId,
-
       assignmentStartDate: startDate,
       rotationSchedule: rotationSchedule.trim(),
 
-      // PRIMARY does not require these
+      // not used in our UI yet
       assignmentEndDate: null,
-      overrideReason: undefined,
       opconSupervisorId: null,
       notes: null,
+    };
+
+    // If worker already has an active PRIMARY, prompt override
+    if (selectedConflict) {
+      setPendingPayload(basePayload);
+
+            const w = workerListRaw.find((x) => x.id === workerId);
+      const workerName =
+        w ? `${w.first_name ?? ""} ${w.last_name ?? ""}`.trim() || w.name || w.id : workerId;
+
+      const conflictProject = projectLabelById(selectedConflict.project_id);
+      const conflictPosition = positionLabelById(selectedConflict.position_id);
+
+      setConflictText(
+        `${workerName} already has an active PRIMARY assignment on ${conflictProject} (${conflictPosition}).`
+      );
+
+      setOverrideReason("");
+      setOverrideOpen(true);
+      return;
+    }
+
+    // No conflict → create PRIMARY
+    await assignWorker.mutateAsync({
+      assignmentType: "PRIMARY" as AssignmentType,
+      ...basePayload,
     });
 
     onClose();
   }
 
+  async function confirmOverride() {
+    if (!pendingPayload) return;
+    if (!overrideReason.trim()) return;
+
+    await assignWorker.mutateAsync({
+      assignmentType: "SECONDARY" as AssignmentType,
+      ...pendingPayload,
+      overrideReason: overrideReason.trim(),
+    });
+
+    setOverrideOpen(false);
+    setPendingPayload(null);
+    setOverrideReason("");
+    onClose();
+  }
+
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>New Assignment (Primary)</DialogTitle>
+      <DialogTitle>
+  {requiresOverride ? "New Assignment (Override Required)" : "New Assignment (Primary)"}
+</DialogTitle>
 
       <DialogContent sx={{ display: "grid", gap: 2, mt: 1 }}>
         {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
@@ -169,6 +277,16 @@ export function NewAssignmentModal({ open, onClose }: Props) {
           ))}
         </TextField>
 
+        <FormControlLabel
+          control={
+            <Switch
+              checked={showConflicts}
+              onChange={(e) => setShowConflicts(e.target.checked)}
+            />
+          }
+          label="Show workers already assigned (requires override)"
+        />
+
         <TextField
           select
           label="Worker"
@@ -177,12 +295,22 @@ export function NewAssignmentModal({ open, onClose }: Props) {
           fullWidth
         >
           <MenuItem value="">Select a worker…</MenuItem>
+
           {workerList.map((w: any) => {
             const label =
               `${w.first_name ?? ""} ${w.last_name ?? ""}`.trim() || w.name || w.id;
+
+            const conflict = activePrimaryByWorkerId.get(w.id);
+            const suffix = conflict ? " (already assigned)" : "";
+
             return (
-              <MenuItem key={w.id} value={w.id}>
+              <MenuItem
+                key={w.id}
+                value={w.id}
+                sx={conflict ? { color: "warning.main", fontWeight: 600 } : undefined}
+                >
                 {label}
+                {suffix}
               </MenuItem>
             );
           })}
@@ -205,6 +333,51 @@ export function NewAssignmentModal({ open, onClose }: Props) {
           placeholder="e.g., 14/14"
         />
       </DialogContent>
+
+      {/* Override dialog */}
+      <Dialog
+        open={overrideOpen}
+        onClose={() => setOverrideOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Override Required</DialogTitle>
+
+        <DialogContent sx={{ display: "grid", gap: 2, mt: 1 }}>
+          <Alert severity="warning">{conflictText}</Alert>
+
+          <TextField
+            label="Override justification"
+            value={overrideReason}
+            onChange={(e) => setOverrideReason(e.target.value)}
+            fullWidth
+            multiline
+            minRows={2}
+            placeholder="Why are you assigning this worker again?"
+          />
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setOverrideOpen(false);
+              setPendingPayload(null);
+              setOverrideReason("");
+            }}
+            variant="outlined"
+          >
+            Cancel
+          </Button>
+
+          <Button
+            onClick={confirmOverride}
+            variant="contained"
+            disabled={!overrideReason.trim() || assignWorker.isPending}
+          >
+            Confirm Override
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <DialogActions>
         <Button onClick={onClose} variant="outlined" disabled={assignWorker.isPending}>
