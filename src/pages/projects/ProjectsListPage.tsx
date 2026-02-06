@@ -1,4 +1,6 @@
 // src/pages/projects/ProjectsListPage.tsx
+
+// Import Material-UI components for UI elements
 import {
   Alert,
   Box,
@@ -12,19 +14,28 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+// Import React hooks for state management and memoization
 import { useMemo, useState } from "react";
+// Import React Router hook for navigation
 import { useNavigate } from "react-router-dom";
 
+// Import custom query hook for fetching projects list
 import { useProjectsList } from "../../services/api/projects/projects.queries";
+// Import custom query hook for fetching project statuses
 import { useProjectStatuses } from "../../services/api/projects/projectStatuses.queries";
+// Import type for project status rows
 import type { ProjectStatusRow } from "../../services/api/projects/projectStatuses.service";
 
+// Main component for listing projects
 export default function ProjectsListPage() {
+  // Hook for programmatic navigation
   const navigate = useNavigate();
+  // State for view filter (active or all projects)
   const [view, setView] = useState<"active" | "all">("active");
 
   // Fetch project statuses
   const statuses = useProjectStatuses({ activeOnly: true });
+  // Prepare status list from query data
   const statusList = (statuses.data ?? []) as ProjectStatusRow[];
 
   // Find the "Active" status ID
@@ -55,17 +66,22 @@ export default function ProjectsListPage() {
     };
   }, [view, activeStatusId]);
 
+  // Fetch projects based on parameters
   const projects = useProjectsList(params);
 
   // Loading and error states
   const loading = projects.isLoading || statuses.isLoading;
   const error = (projects.error as Error | null) || (statuses.error as Error | null);
 
+  // Render loading spinner if data is loading
   if (loading) return <CircularProgress />;
+  // Render error alert if there's an error
   if (error) return <Alert severity="error">{error.message}</Alert>;
 
+  // Prepare project list from query data
   const projectList = projects.data?.data ?? [];
 
+  // Main container
   return (
     <Paper sx={{ p: 2 }}>
       {/* Header with View filter and New Project button */}
@@ -78,9 +94,12 @@ export default function ProjectsListPage() {
           mb: 2,
         }}
       >
+        // Page title
         <Typography variant="h5">Projects</Typography>
 
+        // Controls for view filter and new project button
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+          // Dropdown for selecting view (active or all)
           <TextField
             select
             size="small"
@@ -93,6 +112,7 @@ export default function ProjectsListPage() {
             <MenuItem value="all">All</MenuItem>
           </TextField>
 
+          // Button to navigate to new project creation page
           <Button variant="contained" onClick={() => navigate("/projects/new")}>
             New Project
           </Button>
@@ -101,16 +121,20 @@ export default function ProjectsListPage() {
 
       {/* Project List */}
       {projectList.length === 0 ? (
+        // Message if no projects are found
         <Typography variant="body2" color="text.secondary">
           No projects found.
         </Typography>
       ) : (
+        // List of projects
         <List>
           {projectList.map((project) => (
+            // Clickable list item for each project
             <ListItemButton
               key={project.id}
               onClick={() => navigate(`/projects/${project.id}`)}
             >
+              // Text displaying project name and status
               <ListItemText
                 primary={project.project_name}
                 secondary={

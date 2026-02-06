@@ -1,4 +1,5 @@
 // src/pages/projects/ProjectsCreatePage.tsx
+
 /**
  * Create a new project.
  *
@@ -9,9 +10,14 @@
  * - If “Active” doesn’t exist, status stays null and the service will throw a helpful error.
  */
 
+// Import React hooks for side effects and memoization
 import { useEffect, useMemo } from "react";
+// Import React Router hook for programmatic navigation
 import { useNavigate } from "react-router-dom";
+// Import React Hook Form for form management and validation
 import { useForm } from "react-hook-form";
+
+// Import Material-UI components for layout, form fields, and feedback
 import {
   Alert,
   Box,
@@ -23,10 +29,14 @@ import {
   Typography,
 } from "@mui/material";
 
+// Import custom mutation hook for creating a project
 import { useCreateProject } from "../../services/api/projects/projects.queries";
+// Import custom query hook for fetching available project statuses
 import { useProjectStatuses } from "../../services/api/projects/projectStatuses.queries";
+// Import TypeScript type for project creation payload
 import type { ProjectCreate } from "../../services/api/projects/projects.service";
 
+// Lightweight type for status dropdown items (used only in this component)
 type ProjectStatusLite = {
   id: string;
   name: string;
@@ -34,13 +44,17 @@ type ProjectStatusLite = {
   is_active: boolean | null;
 };
 
+// Main component for creating a new project
 export default function ProjectsCreatePage() {
+  // Hook for redirecting after successful creation
   const navigate = useNavigate();
 
+  // Mutation hook for creating the project
   const create = useCreateProject();
   // Hook expects an options object
   const statuses = useProjectStatuses({ activeOnly: true });
 
+  // React Hook Form setup with default values and validation
   const {
     register,
     handleSubmit,
@@ -64,28 +78,31 @@ export default function ProjectsCreatePage() {
     },
   });
 
+  // Watch the current status_id value for auto-select logic
   const statusId = watch("status_id");
 
+  // Memoize the status list (cast from query data)
   const statusList = useMemo(() => {
-  const rows = statuses.data ?? [];
-  return rows as unknown as ProjectStatusLite[];
-}, [statuses.data]);
+    const rows = statuses.data ?? [];
+    return rows as unknown as ProjectStatusLite[];
+  }, [statuses.data]);
 
   // Auto-select "Active" (only if user hasn't picked something)
-useEffect(() => {
-  if (statusId) return;
-  if (!statusList.length) return;
+  useEffect(() => {
+    if (statusId) return;
+    if (!statusList.length) return;
 
-  // Find status whose name is "Active" (case-insensitive)
-  const active = statusList.find(
-    (s) => (s.name ?? "").toLowerCase().trim() === "active"
-  );
+    // Find status whose name is "Active" (case-insensitive)
+    const active = statusList.find(
+      (s) => (s.name ?? "").toLowerCase().trim() === "active"
+    );
 
-  if (active?.id) {
-    setValue("status_id", active.id, { shouldValidate: true });
-  }
-}, [statusId, statusList, setValue]);
+    if (active?.id) {
+      setValue("status_id", active.id, { shouldValidate: true });
+    }
+  }, [statusId, statusList, setValue]);
 
+  // Form submission handler with data cleaning and navigation
   const onSubmit = handleSubmit(async (values: ProjectCreate) => {
     const cleaned: ProjectCreate = {
       project_name: values.project_name?.trim(),
@@ -108,29 +125,36 @@ useEffect(() => {
     navigate(`/projects/${saved.id}`);
   });
 
+  // Combined loading state from mutation and statuses query
   const loading = create.isPending || statuses.isLoading;
+  // Combined error state from mutation or statuses query
   const error = (create.error as Error | null) || (statuses.error as Error | null);
 
+  // Main container
   return (
     <Paper sx={{ p: 2, maxWidth: 760 }}>
+      {/* Page title */}
       <Typography variant="h5" gutterBottom>
         New Project
       </Typography>
 
+      {/* Show loading spinner while creating or fetching statuses */}
       {loading && (
         <Box sx={{ mt: 1, mb: 1 }}>
           <CircularProgress size={20} />
         </Box>
       )}
 
+      {/* Show any error from create or statuses query */}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error.message}
         </Alert>
       )}
 
+      {/* Form wrapper */}
       <Box component="form" onSubmit={onSubmit} sx={{ display: "grid", gap: 2 }}>
-        {/* Required */}
+        {/* Required fields */}
         <TextField
           label="Project Name"
           {...register("project_name", { required: "Project name is required" })}
@@ -145,7 +169,7 @@ useEffect(() => {
           helperText={errors.customer_id?.message}
         />
 
-        {/* Optional */}
+        {/* Optional fields */}
         <TextField
           select
           label="Status"
@@ -204,6 +228,7 @@ useEffect(() => {
           placeholder="Anything helpful for the team..."
         />
 
+        {/* Action buttons */}
         <Box sx={{ display: "flex", gap: 2 }}>
           <Button variant="contained" type="submit" disabled={loading}>
             {create.isPending ? "Creating..." : "Create Project"}

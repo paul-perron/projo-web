@@ -26,6 +26,8 @@ import WorkersListPage from "./pages/workers/WorkersListPage";
 import AssignmentsListPage from "./pages/assignments/AssignmentsListPage";
 import AssignmentsCreatePage from "./pages/assignments/AssignmentsCreatePage";
 
+import VendorsListPage from "./pages/vendors/VendorsListPage";
+
 function App() {
   const location = useLocation();
   const hideNav = location.pathname === "/login";
@@ -80,7 +82,15 @@ function App() {
               to="/assignments"
               sx={navButtonSx(isActive("/assignments"))}
             >
-              Assignments
+              Assignements
+            </Button>
+            <Button
+              color="inherit"
+              component={Link}
+              to="/vendors"
+              sx={navButtonSx(isActive("/vendors"))}
+            >
+              Vendors
             </Button>
             <Button
               color="inherit"
@@ -146,7 +156,15 @@ function App() {
               </RequireAuth>
             }
           />
-
+          {/* Protected: Vendors */}
+          <Route
+            path="/vendors"
+            element={
+              <RequireAuth>
+                <VendorsListPage />
+              </RequireAuth>
+            }
+          />
           {/* Protected: Workers */}
           <Route
             path="/workers"

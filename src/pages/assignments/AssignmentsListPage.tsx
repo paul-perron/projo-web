@@ -16,6 +16,7 @@
  * - Therefore this page does NOT need to manually refetch after create
  */
 
+// Import Material-UI components for UI elements
 import {
   Alert,
   Box,
@@ -32,34 +33,45 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+// Import React hooks for state, effects, memoization, and refs
 import { useEffect, useMemo, useRef, useState } from "react";
 
+// Import custom query hook for fetching projects list
 import { useProjectsList } from "../../services/api/projects/projects.queries";
+// Import custom query hook for fetching workers list
 import { useWorkersList } from "../../services/api/workers/workers.queries";
+// Import custom hooks for assignments list and completing assignments
 import {
   useAssignmentsList,
   useCompleteAssignment,
 } from "../../services/api/assignments/assignments.queries";
+// Import custom query hook for fetching all project positions
 import {
   useAllProjectPositions,
   type ProjectPositionLite,
 } from "../../services/api/projects/projectPositions.queries";
 
+// Import type for Assignment
 import type { Assignment } from "../../services/api/assignments/types";
+// Import type for Worker
 import type { Worker } from "../../services/api/workers/types";
 
+// Import modal component for new assignments
 import { NewAssignmentModal } from "./NewAssignmentModal";
 
+// Utility function to convert ISO date to YYYY-MM-DD
 function toDateOnly(value: string) {
   if (!value) return value;
   return value.includes("T") ? value.slice(0, 10) : value;
 }
 
+// Utility function to generate worker display label
 function workerLabel(w: Worker) {
   const name = `${w.first_name ?? ""} ${w.last_name ?? ""}`.trim();
   return name || w.id;
 }
 
+// Utility function to generate position display label
 function positionLabel(pos?: ProjectPositionLite) {
   if (!pos) return "";
   const parts = [
@@ -70,6 +82,7 @@ function positionLabel(pos?: ProjectPositionLite) {
   return parts.join(" ");
 }
 
+// Utility function to get chip info for assignment type
 function assignmentTypeChip(type?: string) {
   switch (type) {
     case "PRIMARY":
@@ -83,6 +96,7 @@ function assignmentTypeChip(type?: string) {
   }
 }
 
+// Utility function to get styles for assignment status
 function statusStyle(status: string | null | undefined) {
   switch (status) {
     case "active":
@@ -108,6 +122,7 @@ function statusStyle(status: string | null | undefined) {
   }
 }
 
+// Utility function to get styles for assignment type
 function typeStyle(type?: string) {
   switch (type) {
     case "PRIMARY":
@@ -121,30 +136,44 @@ function typeStyle(type?: string) {
   }
 }
 
+// Utility function to normalize strings for search
 function norm(s?: string | null) {
   return (s ?? "").toString().toLowerCase().trim();
 }
 
+// Main component for Assignments List Page
 export default function AssignmentsListPage() {
   console.log("[AssignmentsListPage] MOUNT/RENDER");
 
+  // State for view filter (active or all)
   const [view, setView] = useState<"active" | "all">("active");
+  // State for dense layout toggle
   const [dense, setDense] = useState(false);
+  // State for sort field
   const [sortBy, setSortBy] = useState<"start_date" | "worker" | "project" | "position" | "type">("start_date");
+  // State for sort direction
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   // Filters
+  // State for project filter ID
   const [projectFilterId, setProjectFilterId] = useState("");
+  // State for worker filter ID
   const [workerFilterId, setWorkerFilterId] = useState("");
+  // State for position filter ID
   const [positionFilterId, setPositionFilterId] = useState("");
+  // State for search query
   const [q, setQ] = useState("");
 
   // Lookup tables (ID → display label)
+  // Fetch projects with memoized params
   const projects = useProjectsList(useMemo(() => ({ page: 1, pageSize: 500 }), []));
+  // Fetch workers with memoized params
   const workers = useWorkersList(useMemo(() => ({ page: 1, pageSize: 500 }), []));
+  // Fetch all positions
   const positions = useAllProjectPositions();
 
   // Assignments list
+  // Fetch assignments with memoized params
   const assignments = useAssignmentsList(
     useMemo(
       () => ({
@@ -157,6 +186,7 @@ export default function AssignmentsListPage() {
     )
   );
 
+  // Effect for debugging state changes
   useEffect(() => {
     console.log("[AssignmentsListPage] view =", view);
     console.log("[AssignmentsListPage] includeEnded =", view === "all");
@@ -180,138 +210,161 @@ export default function AssignmentsListPage() {
     assignments.data,
   ]);
 
+  // Prepare assignments list
   const list = (assignments.data ?? []) as Assignment[];
 
   // New assignment modal
+  // State for new assignment modal visibility
   const [newOpen, setNewOpen] = useState(false);
 
   // Complete dialog
+  // Mutation hook for completing assignments
   const complete = useCompleteAssignment();
+  // State for complete dialog visibility
   const [completeOpen, setCompleteOpen] = useState(false);
+  // State for target assignment to complete
   const [completeTarget, setCompleteTarget] = useState<Assignment | null>(null);
+  // State for end date in complete dialog
   const [completeEndDate, setCompleteEndDate] = useState(toDateOnly(new Date().toISOString()));
+  // State for end status in complete dialog
   const [endStatus, setEndStatus] = useState<"completed" | "cancelled">("completed");
 
   // Focus mgmt (prevents MUI aria-hidden warnings)
+  // Ref for first field in complete dialog
   const firstFieldRef = useRef<HTMLInputElement>(null);
+  // Ref for last active element before opening dialogs
   const lastActiveElRef = useRef<HTMLElement | null>(null);
 
+  // Combined loading state from all queries
   const loading =
     projects.isLoading || workers.isLoading || positions.isLoading || assignments.isLoading;
 
+  // Combined error state from all queries
   const error =
     (projects.error as Error | null) ||
     (workers.error as Error | null) ||
     (positions.error as Error | null) ||
     (assignments.error as Error | null);
 
+  // Memoize project list
   const projectList = useMemo(() => projects.data?.data ?? [], [projects.data]);
+  // Memoize worker list
   const workerList = useMemo(() => (workers.data ?? []) as Worker[], [workers.data]);
+  // Memoize position list
   const positionList = useMemo(
     () => (positions.data ?? []) as ProjectPositionLite[],
     [positions.data]
   );
 
-    const projectById = useMemo(() => {
+  // Memoize project map by ID
+  const projectById = useMemo(() => {
     const m = new Map<string, { id: string; project_name?: string | null }>();
     projectList.forEach((p) => m.set(p.id, p));
     return m;
   }, [projectList]);
 
+  // Memoize worker map by ID
   const workerById = useMemo(() => {
     const m = new Map<string, Worker>();
     workerList.forEach((w) => m.set(w.id, w));
     return m;
   }, [workerList]);
 
+  // Memoize position map by ID
   const positionById = useMemo(() => {
-  const m = new Map<string, ProjectPositionLite>();
-  positionList.forEach((p) => m.set(p.id, p));
-  return m;
-}, [positionList]);
+    const m = new Map<string, ProjectPositionLite>();
+    positionList.forEach((p) => m.set(p.id, p));
+    return m;
+  }, [positionList]);
 
-const filteredList = useMemo(() => {
-  const needle = norm(q);
-  if (!needle) return list;
+  // Memoize filtered list based on search query
+  const filteredList = useMemo(() => {
+    const needle = norm(q);
+    if (!needle) return list;
 
-  return list.filter((a) => {
-    const w = workerById.get(a.worker_id);
-    const p = projectById.get(a.project_id);
-    const pos = positionById.get(a.position_id);
-  
-    const haystack = [
-      workerLabel(w as any),
-      p?.project_name ?? "",
-      pos?.name ?? "",
-      a.assignment_type ?? "",
-      a.status ?? "",
-    ]
-      .map(norm)
-      .join(" ");
+    return list.filter((a) => {
+      const w = workerById.get(a.worker_id);
+      const p = projectById.get(a.project_id);
+      const pos = positionById.get(a.position_id);
+    
+      const haystack = [
+        workerLabel(w as any),
+        p?.project_name ?? "",
+        pos?.name ?? "",
+        a.assignment_type ?? "",
+        a.status ?? "",
+      ]
+        .map(norm)
+        .join(" ");
 
-    return haystack.includes(needle);
-  });
-}, [q, list, workerById, projectById, positionById]);
-
-const sortedList = useMemo(() => {
-    const dir = sortDir === "asc" ? 1 : -1;
-
-    function cmp(a: string, b: string) {
-      return a.localeCompare(b) * dir;
-    }
-
-    function safe(v: string | null | undefined) {
-      return (v ?? "").toString();
-    }
-
-    return [...filteredList].sort((a, b) => {
-      if (sortBy === "start_date") {
-        const av = safe(a.assignment_start_date);
-        const bv = safe(b.assignment_start_date);
-        return cmp(av, bv);
-      }
-
-      if (sortBy === "type") {
-        return cmp(safe(a.assignment_type), safe(b.assignment_type));
-      }
-
-      if (sortBy === "worker") {
-        const aw = workerById.get(a.worker_id);
-        const bw = workerById.get(b.worker_id);
-        return cmp(workerLabel(aw as any), workerLabel(bw as any));
-      }
-
-      if (sortBy === "project") {
-        const ap = projectById.get(a.project_id);
-        const bp = projectById.get(b.project_id);
-        return cmp(safe(ap?.project_name), safe(bp?.project_name));
-      }
-
-      if (sortBy === "position") {
-        const apos = positionById.get(a.position_id);
-        const bpos = positionById.get(b.position_id);
-        return cmp(safe(apos?.name), safe(bpos?.name));
-      }
-
-      return 0;
+      return haystack.includes(needle);
     });
- }, [filteredList, sortBy, sortDir, workerById, projectById, positionById]);
+  }, [q, list, workerById, projectById, positionById]);
 
+  // Memoize sorted list based on sort criteria
+  const sortedList = useMemo(() => {
+      const dir = sortDir === "asc" ? 1 : -1;
+
+      function cmp(a: string, b: string) {
+        return a.localeCompare(b) * dir;
+      }
+
+      function safe(v: string | null | undefined) {
+        return (v ?? "").toString();
+      }
+
+      return [...filteredList].sort((a, b) => {
+        if (sortBy === "start_date") {
+          const av = safe(a.assignment_start_date);
+          const bv = safe(b.assignment_start_date);
+          return cmp(av, bv);
+        }
+
+        if (sortBy === "type") {
+          return cmp(safe(a.assignment_type), safe(b.assignment_type));
+        }
+
+        if (sortBy === "worker") {
+          const aw = workerById.get(a.worker_id);
+          const bw = workerById.get(b.worker_id);
+          return cmp(workerLabel(aw as any), workerLabel(bw as any));
+        }
+
+        if (sortBy === "project") {
+          const ap = projectById.get(a.project_id);
+          const bp = projectById.get(b.project_id);
+          return cmp(safe(ap?.project_name), safe(bp?.project_name));
+        }
+
+        if (sortBy === "position") {
+          const apos = positionById.get(a.position_id);
+          const bpos = positionById.get(b.position_id);
+          return cmp(safe(apos?.name), safe(bpos?.name));
+        }
+
+        return 0;
+      });
+   }, [filteredList, sortBy, sortDir, workerById, projectById, positionById]);
+
+  // Function to remember and blur active element before opening dialogs
   function rememberAndBlurActiveElement() {
     lastActiveElRef.current = document.activeElement as HTMLElement | null;
     lastActiveElRef.current?.blur?.();
   }
 
+  // Function to open new assignment modal
   function openNewAssignment() {
     rememberAndBlurActiveElement();
     setNewOpen(true);
   }
 
+  // Function to close new assignment modal
   function closeNewAssignment() {
     setNewOpen(false);
     window.setTimeout(() => lastActiveElRef.current?.focus?.(), 0);
   }
 
+  // Function to open complete dialog for an assignment
   function openComplete(a: Assignment) {
     rememberAndBlurActiveElement();
     setCompleteTarget(a);
@@ -320,12 +373,14 @@ const sortedList = useMemo(() => {
     setCompleteOpen(true);
   }
 
+  // Function to close complete dialog
   function closeComplete() {
     setCompleteOpen(false);
     setCompleteTarget(null);
     window.setTimeout(() => lastActiveElRef.current?.focus?.(), 0);
   }
 
+  // Async function to submit complete assignment
   async function submitComplete() {
     if (!completeTarget) return;
     if (!completeEndDate.trim()) return;
@@ -339,17 +394,21 @@ const sortedList = useMemo(() => {
     closeComplete();
   }
 
+  // Effect to focus first field when complete dialog opens
   useEffect(() => {
     if (!completeOpen) return;
     const t = window.setTimeout(() => firstFieldRef.current?.focus(), 0);
     return () => window.clearTimeout(t);
   }, [completeOpen]);
 
+  // Main container
   return (
     <Paper sx={{ p: 2, borderRadius: 1 }}>
       {/* Top Row: View + New Assignment */}
       <Box sx={{ display: "flex", gap: 1, alignItems: "center", justifyContent: "space-between" }}>
+        // View filter and dense toggle
         <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+          // Dropdown for view selection
           <TextField
             select
             size="small"
@@ -362,6 +421,7 @@ const sortedList = useMemo(() => {
             <MenuItem value="all">All</MenuItem>
           </TextField>
 
+          // Switch for compact layout
           <FormControlLabel
             control={
               <Switch
@@ -374,6 +434,7 @@ const sortedList = useMemo(() => {
           />
         </Box>
 
+        // Button to open new assignment modal
         <Button onClick={openNewAssignment} variant="contained">
           New Assignment
         </Button>
@@ -382,6 +443,7 @@ const sortedList = useMemo(() => {
       {/* Filters Row */}
       <Box sx={{ mt: 2, display: "flex", gap: 1, flexWrap: "wrap", alignItems: "center" }}>
 
+      // Search input field
       <TextField
         size="small"
         label="Search"
@@ -391,6 +453,7 @@ const sortedList = useMemo(() => {
         placeholder="Worker, project, position…"
       />
 
+        // Dropdown for project filter
         <TextField
           select
           size="small"
@@ -412,6 +475,7 @@ const sortedList = useMemo(() => {
           ))}
         </TextField>
 
+        // Dropdown for worker filter
         <TextField
           select
           size="small"
@@ -433,6 +497,7 @@ const sortedList = useMemo(() => {
           ))}
         </TextField>
 
+        // Dropdown for position filter
         <TextField
           select
           size="small"
@@ -456,6 +521,7 @@ const sortedList = useMemo(() => {
           ))}
         </TextField>
 
+        // Dropdown for sort field
         <TextField
           select
           size="small"
@@ -471,6 +537,7 @@ const sortedList = useMemo(() => {
           <MenuItem value="type">Type</MenuItem>
         </TextField>
 
+        // Dropdown for sort direction
         <TextField
           select
           size="small"
@@ -483,6 +550,7 @@ const sortedList = useMemo(() => {
           <MenuItem value="asc">Asc</MenuItem>
         </TextField>
 
+                // Button to reset all filters
                 <Button
           variant="outlined"
           size="small"
@@ -500,12 +568,14 @@ const sortedList = useMemo(() => {
         </Button>
       </Box>
 
+      // Display error if any
       {error && (
         <Alert severity="error" sx={{ mt: 2 }}>
           {error.message}
         </Alert>
       )}
 
+      // Render results if not loading and no error
       {!loading && !error && (
         <>
           {/* Count Display */}
@@ -513,8 +583,10 @@ const sortedList = useMemo(() => {
             Showing {sortedList.length} assignment{sortedList.length === 1 ? "" : "s"}
           </Typography>
 
+          // Grid of assignment cards
           <Box sx={{ mt: 1, display: "grid", gap: 1 }}>
             {sortedList.length === 0 ? (
+              // Message if no assignments found
               <Typography variant="body2">No assignments found.</Typography>
             ) : (
               sortedList.map((a) => {
@@ -544,6 +616,7 @@ const sortedList = useMemo(() => {
 
                 const metaText = metaParts.join(" • ");
 
+                // Assignment card
                 return (
                   <Paper
                     key={a.id}
@@ -555,6 +628,7 @@ const sortedList = useMemo(() => {
                       backgroundColor: "transparent",
                     }}
                   >
+                    // Card content layout
                     <Box
                       sx={{
                         display: "flex",
@@ -626,6 +700,7 @@ const sortedList = useMemo(() => {
                       {/* RIGHT: action button */}
                       <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
                         {isActive && (
+                          // Button to open complete dialog for active assignments
                           <Button variant="outlined" size="small" onClick={() => openComplete(a)}>
                             Complete
                           </Button>
@@ -645,9 +720,12 @@ const sortedList = useMemo(() => {
 
       {/* Complete assignment dialog */}
       <Dialog open={completeOpen} onClose={closeComplete} fullWidth maxWidth="sm">
+        // Dialog title
         <DialogTitle>Complete Assignment</DialogTitle>
 
+        // Dialog content with fields
         <DialogContent sx={{ display: "grid", gap: 2, mt: 1 }}>
+          // End date input
           <TextField
             label="End Date"
             type="date"
@@ -658,6 +736,7 @@ const sortedList = useMemo(() => {
             fullWidth
           />
 
+          // Dropdown for end status
           <TextField
             select
             label="End Status"
@@ -669,14 +748,18 @@ const sortedList = useMemo(() => {
             <MenuItem value="cancelled">Cancelled</MenuItem>
           </TextField>
 
+          // Error alert if mutation fails
           {complete.error && <Alert severity="error">{(complete.error as Error).message}</Alert>}
         </DialogContent>
 
+        // Dialog actions
         <DialogActions>
+          // Cancel button
           <Button onClick={closeComplete} variant="outlined">
             Cancel
           </Button>
 
+          // Submit button for completing assignment
           <Button
             onClick={submitComplete}
             variant="contained"

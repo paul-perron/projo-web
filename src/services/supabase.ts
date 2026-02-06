@@ -7,30 +7,17 @@ const env = validateSupabaseEnv();
 const url = env.url as string;
 const key = env.key as string;
 
-/**
- * DEV-safe singleton (prevents multiple GoTrueClient instances under Vite HMR)
- *
- * IMPORTANT:
- * - We create ONE Supabase client
- * - We FORCE PostgREST schema to "api" (default + headers)
- * - We also export a schema-scoped PostgREST client `api`
- *
- * NOTE: If you previously created a client without db.schema="api",
- * Vite HMR can keep the old instance alive. We bump the cache key.
- */
 type AnySupabase = SupabaseClient<any, any, any, any>;
 
 const globalForSupabase = globalThis as unknown as {
-  __projo_supabase_v3__?: AnySupabase;
+  __projo_supabase_v4__?: AnySupabase; // bump key to force fresh client under HMR
 };
 
 export const supabase: AnySupabase =
-  globalForSupabase.__projo_supabase_v3__ ??
+  globalForSupabase.__projo_supabase_v4__ ??
   createClient(url, key, {
-    // Default schema for ALL .from(...) calls made off `supabase`
     db: { schema: "api" },
 
-    // Belt + suspenders: ensure PostgREST always targets api schema
     global: {
       headers: {
         "Accept-Profile": "api",
@@ -46,7 +33,7 @@ export const supabase: AnySupabase =
   });
 
 if (import.meta.env.DEV) {
-  globalForSupabase.__projo_supabase_v3__ = supabase;
+  globalForSupabase.__projo_supabase_v4__ = supabase;
 }
 
 /**
